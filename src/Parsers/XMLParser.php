@@ -46,11 +46,11 @@ class XMLParser implements StreamParserInterface
 	private function searchElement(callable $function)
 	{
 		if($this->isElement() && ! $this->shouldBeSkipped()){
-			$function($this->extractElement($this->reader->name, false, $this->reader->depth));
+			$function($this->extractElement($this->reader->name));
 		}
 	}
 
-	private function extractElement(String $elementName, $couldBeAnElementsList = false, int $parentDepth)
+	private function extractElement(String $elementName, $couldBeAnElementsList = false)
 	{
 		$elementCollection = (new Collection())->merge($this->getCurrentElementAttributes());
 
@@ -58,8 +58,12 @@ class XMLParser implements StreamParserInterface
 			return $elementCollection;
 		}
 
+		$this->reader->moveToElement();
+		if(substr(preg_replace('/\s+/', '', $this->reader->readOuterXml()), -2, 2) == '/>')
+			return $elementCollection;
+
 		while($this->reader->read()) {
-			if($this->isEndElement($elementName) && $this->reader->depth === $parentDepth) {
+			if($this->isEndElement($elementName)) {
 				break;
 			}
 			if($this->isValue()) {
@@ -72,10 +76,30 @@ class XMLParser implements StreamParserInterface
 			if($this->isElement()) {
 				if($couldBeAnElementsList) {
 					$foundElementName = $this->reader->name;
-					$elementCollection->push(new Collection($this->extractElement($foundElementName, false, $this->reader->depth)));
+					$elementCollection->push(new Collection($this->extractElement($foundElementName)));
 				} else {
 					$foundElementName = $this->reader->name;
-					$elementCollection->put($foundElementName, $this->extractElement($foundElementName, true, $this->reader->depth));
+					if ($elementCollection->has($this->reader->name)) {
+						$oldElement = $elementCollection->get($foundElementName);
+						$wrapperElement = new Collection();
+
+						if($oldElement instanceof Collection) {
+							if(!($oldElement->first() instanceof Collection)) {
+								$wrapperElement->push(new Collection($oldElement));
+							} else {
+								foreach ($oldElement as $key => $value) {
+									$wrapperElement->push(new Collection($value));
+								}
+							}
+						} else $wrapperElement->push(new Collection($oldElement));
+
+						$element = new Collection($this->extractElement($foundElementName, true));
+						$wrapperElement->push($element);
+
+						$elementCollection->put($foundElementName, $wrapperElement);
+					} else {
+						$elementCollection->put($foundElementName, $this->extractElement($foundElementName, true));
+					}
 				}
 			}
 		}
